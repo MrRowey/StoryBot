@@ -10,6 +10,7 @@ const drafts = new Map();
 const mainHeroId = 'archie';
 let sessionGeminiKey = null;
 let sessionOpenAIKey = null;
+let selectedOllamaModel = process.env.OLLAMA_MODEL || '';
 const activeOpenAIKey=()=>sessionOpenAIKey||process.env.OPENAI_API_KEY||'';
 const openAIModel=()=>process.env.OPENAI_MODEL||'gpt-4.1-mini';
 const activeGeminiKey=()=>sessionGeminiKey||process.env.GEMINI_API_KEY||'';
@@ -123,13 +124,48 @@ async function generateOpenAI(input){
  if(typeof result.title!=='string'||typeof result.story!=='string'||result.story.length<200)throw Object.assign(new Error('OpenAI returned an incomplete story.'),{status:502});
  return {title:result.title.slice(0,120),story:result.story,model,provider:'openai'};
 }
-async function generate(input){return generateOpenAI(input);}
+async function generateOllama(input){
+ const model=selectedOllamaModel;
+ if(!model)throw Object.assign(new Error('Choose an installed Ollama model in Parent Settings first.'),{status:503});
+ let response;
+ try{response=await fetch('http://127.0.0.1:11434/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,prompt:prompt(input),format:'json',stream:false,options:{temperature:0.7,num_predict:2600}}),signal:AbortSignal.timeout(240000)});}
+ catch(e){throw Object.assign(new Error('Ollama connection failed or timed out: '+e.message),{status:502});}
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw Object.assign(new Error('Ollama HTTP '+response.status+': '+String(data.error||'Unknown error').slice(0,250)),{status:502});
+ let result;
+ try{result=JSON.parse(data.response||'');}catch{throw Object.assign(new Error('Ollama returned invalid story JSON. Try another model.'),{status:502});}
+ if(typeof result.title!=='string'||typeof result.story!=='string'||result.story.length<200)throw Object.assign(new Error('Ollama returned an incomplete story. Try a larger model.'),{status:502});
+ return {title:result.title.slice(0,120),story:result.story,model,provider:'ollama'};
+}
+async function generate(input){return generateOllama(input);}
 export function createServer({generateStory=generate}={}){
  return http.createServer(async(req,res)=>{
   try{
    const url=new URL(req.url,'http://localhost');
    if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'content-type':'text/html; charset=utf-8'});return res.end(await readFile(html));}
-   if(req.method==='GET'&&url.pathname==='/api/status')return reply(res,200,{phase:'story-builder',geminiConfigured:!!activeGeminiKey(),openaiConfigured:!!activeOpenAIKey(),provider:'openai',toniesLive:false});
+   if(req.method==='GET'&&url.pathname==='/api/status')return reply(res,200,{phase:'story-builder',geminiConfigured:!!activeGeminiKey(),openaiConfigured:!!activeOpenAIKey(),provider:'ollama',ollamaModel:selectedOllamaModel,toniesLive:false});
+   if(req.method==='GET'&&url.pathname==='/api/settings/ollama'){
+    try{
+     const response=await fetch('http://127.0.0.1:11434/api/tags',{signal:AbortSignal.timeout(5000)});
+     if(!response.ok)throw Error('HTTP '+response.status);
+     const data=await response.json();
+     const models=(data.models||[]).map(m=>m.name);
+     if(!selectedOllamaModel&&models.length)selectedOllamaModel=models[0];
+     return reply(res,200,{connected:true,models,selectedModel:selectedOllamaModel});
+    }catch(e){return reply(res,200,{connected:false,models:[],selectedModel:selectedOllamaModel,error:'Cannot connect to Ollama at localhost:11434: '+e.message});}
+   }
+   if(req.method==='POST'&&url.pathname==='/api/settings/ollama'){
+    const b=await body(req);
+    if(typeof b.model!=='string'||!b.model||b.model.length>200)return reply(res,400,{error:'Select a model.'});
+    try{
+     const response=await fetch('http://127.0.0.1:11434/api/tags',{signal:AbortSignal.timeout(5000)});
+     if(!response.ok)throw Error('Ollama unavailable');
+     const data=await response.json();
+     if(!(data.models||[]).some(m=>m.name===b.model))return reply(res,400,{error:'Model is not installed in Ollama.'});
+     selectedOllamaModel=b.model;
+     return reply(res,200,{selectedModel:selectedOllamaModel,message:'Ollama model selected.'});
+    }catch(e){return reply(res,502,{error:'Ollama unavailable: '+e.message});}
+   }
    if(req.method==='GET'&&url.pathname==='/api/settings/openai')return reply(res,200,{configured:!!activeOpenAIKey(),model:openAIModel(),source:sessionOpenAIKey?'web session':process.env.OPENAI_API_KEY?'environment':'none'});
    if(req.method==='POST'&&(url.pathname==='/api/settings/openai/test'||url.pathname==='/api/settings/openai')){
     const b=await body(req);
