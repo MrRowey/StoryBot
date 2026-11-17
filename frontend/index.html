@@ -42,7 +42,8 @@ async function init(){
 $('auto').onchange=()=>{if(villains.length+($('auto').checked?1:0)>3){$('auto').checked=false;notify('Only three villains allowed.');}};
 $('generate').onclick=async()=>{
  if(!toneId){notify('Choose a Creative-Tonie first.');return;}
- if(guests.length<1){notify('Choose at least one guest hero.');return;}\n if(villains.length+($('auto').checked?1:0)<1){notify('Choose at least one villain or enable AI villain.');return;}
+ if(guests.length<1){notify('Choose at least one guest hero.');return;}
+ if(villains.length+($('auto').checked?1:0)<1){notify('Choose at least one villain or enable AI villain.');return;}
  $('generate').disabled=true;notify('Generating a new Bricksburg adventure...');
  try{
   const response=await fetch('/api/story',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({toneId,coreHeroes:core,heroes:guests,villains,autoVillain:$('auto').checked,idea:$('idea').value,minutes:Number($('minutes').value)})});
