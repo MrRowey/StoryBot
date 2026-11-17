@@ -11,7 +11,7 @@ const mainHeroId = 'archie';
 let sessionGeminiKey = null;
 let sessionOpenAIKey = null;
 let selectedOllamaModel = process.env.OLLAMA_MODEL || '';
-const ollamaBase=(process.env.OLLAMA_BASE_URL||'http://127.0.0.1:11434').replace(/\\/$/,'');
+const ollamaBase=(process.env.OLLAMA_BASE_URL||'http://127.0.0.1:11434').replace(/\/$/,'');
 const activeOpenAIKey=()=>sessionOpenAIKey||process.env.OPENAI_API_KEY||'';
 const openAIModel=()=>process.env.OPENAI_MODEL||'gpt-4.1-mini';
 const activeGeminiKey=()=>sessionGeminiKey||process.env.GEMINI_API_KEY||'';
