@@ -90,7 +90,7 @@ async function generate(input){
   throw Object.assign(new Error('Gemini returned an incomplete story. Try generating again.'),{status:502});
  return {title:result.title.slice(0,120),story:result.story};
 }
-export function createServer(){
+export function createServer({generateStory=generate}={}){
  return http.createServer(async(req,res)=>{
   try{
    const url=new URL(req.url,'http://localhost');
@@ -101,7 +101,7 @@ export function createServer(){
    if(req.method==='POST'&&url.pathname==='/api/story'){
     const b=await body(req);const error=validateStory(b);if(error)return reply(res,400,{error});
     if(b.autoVillain&&b.villains.length>=3)return reply(res,400,{error:'Auto villain requires a free villain slot'});
-    const story=await generate(b);
+    const story=await generateStory(b);
     const id=crypto.randomUUID();
     const draft={id,...story,approved:false,minutes:b.minutes,heroes:[mainHeroId,...b.coreHeroes,...b.heroes],coreHeroes:b.coreHeroes,guestHeroes:b.heroes,villains:b.villains,createdAt:new Date().toISOString()};
     drafts.set(id,draft);return reply(res,200,draft);
