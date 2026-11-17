@@ -46,28 +46,33 @@ async function generate(input){
  if(!key)throw Object.assign(new Error('GEMINI_API_KEY is not configured on the server.'),{status:503});
  const model=process.env.GEMINI_MODEL||'gemini-3.8-flash';
  let response;
- try{
-  response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{
-   method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},
-   body:JSON.stringify({contents:[{parts:[{text:prompt(input)}]}],generationConfig:{responseMimeType:'application/json',temperature:0.8}}),
-   signal:AbortSignal.timeout(90000)
-  });
- }catch(e){
-  console.error('Gemini network error:',e.message);
-  throw Object.assign(new Error('Could not reach Gemini. Check internet connectivity and server logs.'),{status:502});
- }
- if(!response.ok){
+ const endpoint='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent';
+ const payload=JSON.stringify({contents:[{parts:[{text:prompt(input)}]}],generationConfig:{responseMimeType:'application/json',temperature:0.8}});
+ for(let attempt=1;attempt<=3;attempt++){
+  try{
+   response=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},body:payload,signal:AbortSignal.timeout(90000)});
+  }catch(e){
+   console.error('Gemini network error:',e.message);
+   throw Object.assign(new Error('Could not reach Gemini. Check internet connectivity and server logs.'),{status:502});
+  }
+  if(response.ok)break;
   let details={};try{details=await response.json();}catch{}
   const code=details.error?.status||'';
   const message=String(details.error?.message||'').slice(0,400);
-  console.error('Gemini API failure:',{httpStatus:response.status,code,message,model});
+  console.error('Gemini API failure:',{httpStatus:response.status,code,message,model,attempt});
+  if((response.status===503||response.status===502||response.status===504)&&attempt<3){
+   const delay=attempt===1?2000:5000;
+   console.log('Gemini temporarily unavailable; retrying in '+delay/1000+' seconds...');
+   await new Promise(resolve=>setTimeout(resolve,delay));
+   continue;
+  }
   const advice=response.status===400?'Check the Gemini model name and request settings.'
    :response.status===401||response.status===403?'Check your Gemini API key and API permissions.'
    :response.status===404?'The configured Gemini model was not found. Check GEMINI_MODEL.'
    :response.status===429?'Gemini quota or rate limit reached. Check Google AI Studio usage and billing.'
-   :response.status>=500?'Gemini is temporarily unavailable. Retry shortly.'
+   :response.status>=500?'Gemini is experiencing high demand. Please try again in a few minutes.'
    :'Check the server console for the Gemini error details.';
-  throw Object.assign(new Error('Gemini returned HTTP '+response.status+' ('+(code||'API error')+'). '+advice),{status:response.status===429?429:502});
+  throw Object.assign(new Error('Gemini returned HTTP '+response.status+' ('+(code||'API error')+'). '+advice),{status:response.status===429?429:response.status===503?503:502});
  }
  let data;
  try{data=await response.json();}catch{throw Object.assign(new Error('Gemini returned unreadable JSON.'),{status:502});}
