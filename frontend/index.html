@@ -2,7 +2,7 @@
 <style>:root{font-family:system-ui;color:#18223d;background:#edf2fb}*{box-sizing:border-box}body{margin:0}.wrap{max-width:850px;margin:auto;padding:24px 16px}header{background:#203e79;color:white;border-radius:18px;padding:24px}section{background:white;padding:22px;border-radius:16px;margin-top:16px;box-shadow:0 3px 12px #1e3a5a10}h1{margin:0 0 8px}h2{font-size:1.15rem}p{line-height:1.5}button,select,textarea,input[type=password]{font:inherit;border-radius:10px;padding:11px}button{border:1px solid #becbe1;background:white;color:#203e79;cursor:pointer}button[aria-pressed=true]{background:#244d9e;color:white}button.primary{background:#244d9e;color:white;border:0}button:disabled{opacity:.45;cursor:not-allowed}button:focus-visible,textarea:focus-visible,input:focus-visible{outline:3px solid #f4ad2c}.choices{display:flex;gap:8px;flex-wrap:wrap}textarea{width:100%;min-height:115px;border:1px solid #b4c2d9}label{display:block;margin:12px 0 6px;font-weight:600}.muted{color:#52617c}.pill{display:inline-block;padding:5px 10px;background:#e8eefb;border-radius:100px}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}#story{min-height:300px;line-height:1.6}#message{padding:10px;border-radius:8px;background:#e8eefb}small{display:block;color:#52617c;margin-top:5px}</style></head>
 <body><main class="wrap"><header><h1>🔒 StoryBot · Parent Dashboard</h1><p>AI settings, story review and approvals · <a href='/' style='color:white'>← Child Mode</a></p><span class="pill">Story builder · Phase 1</span></header>
 <section><h2>🖥️ Local AI · Ollama (free)</h2><p class="muted">StoryBot now generates stories using Ollama on this computer. No API key or cloud credits needed.</p><label for="ollama-model">Installed Ollama model</label><select id="ollama-model"></select><div class="actions"><button id="ollama-refresh" type="button">Check Ollama connection</button><button id="ollama-save" type="button" class="primary">Use selected model</button></div><p id="ollama-status" role="status">Checking Ollama...</p><small>First generation may take several minutes. Keep Ollama running.</small></section><section id="gemini-settings"><h2>⚙️ Parent settings · OpenAI GPT API</h2><p class="muted">Enter your OpenAI API key, verify it with OpenAI, then save it for story generation. The key is kept on this local server only until StoryBot restarts. No key is sent to the browser again.</p><label for="openai-key">OpenAI API key</label><input id="openai-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your new OpenAI Platform key" style="width:100%;border:1px solid #b4c2d9"><div class="actions"><button id="test-key" type="button">Test connection</button><button id="save-key" type="button" class="primary">Verify & use key</button></div><p id="openai-status" role="status">Checking configuration...</p><small>Local testing only: parent PIN and encrypted persistent storage will be added later. Do not expose StoryBot to the internet.</small></section>
-<section><h2>1. Creative-Tonie</h2><p class="muted">Demo destinations until Tonies account integration is ready.</p><div id="tonies" class="choices"></div></section>
+<section><h2>🦸 Character Manager</h2><p class="muted">Add, edit, hide or remove heroes and villains. Archie is always the main hero. Images can be HTTPS URLs or hosted /assets/ paths.</p><div class="actions"><button id="characters-refresh">Refresh characters</button><button id="characters-add">+ Add character</button></div><div id="character-manager" class="choices"></div><p id="character-status" role="status"></p></section><section><h2>1. Creative-Tonie</h2><p class="muted">Demo destinations until Tonies account integration is ready.</p><div id="tonies" class="choices"></div></section>
 <section><h2>2. Story theme</h2><div class="pill">🧱 Superhero Archie & Bricksburg</div><p class="muted">Gentle, non-violent superhero adventures with a familiar five-stage bedtime ending.</p></section>
 <section><h2>3. Core & guest heroes</h2><p class="muted">Archie always leads. Choose up to 3 core companions and 1–4 guest heroes for this story.</p><h3>Core heroes (your choice)</h3><div id="core" class="choices"></div><small id="corecount"></small><h3>Guest heroes</h3><div id="heroes" class="choices"></div></section>
 <section><h2>4. Villains</h2><p class="muted">Choose 1–3 villains, including an optional surprise AI-created villain.</p><div id="villains" class="choices"></div><label><input id="auto" type="checkbox"> Invent a new gentle villain</label></section>
@@ -74,6 +74,36 @@ $('ollama-save').onclick=async()=>{
   $('ollama-status').textContent='✓ '+data.message+' '+data.selectedModel;
  }catch(e){$('ollama-status').textContent='✗ '+e.message;}
 };
+async function refreshCharacters(){
+ try{
+  const response=await fetch('/api/characters');const data=await response.json();
+  $('character-manager').replaceChildren(...data.characters.map(c=>{
+   const box=document.createElement('div');box.style.cssText='border:1px solid #d3dff4;border-radius:12px;padding:10px;max-width:180px;display:grid;gap:7px';
+   if(c.imageUrl){const img=document.createElement('img');img.src=c.imageUrl;img.alt=c.name;img.style.cssText='width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px';box.append(img);}
+   const label=document.createElement('strong');label.textContent=c.name+' · '+c.role+(c.enabled===false?' (hidden)':'');box.append(label);
+   if(c.id!=='archie'){
+    const edit=document.createElement('button');edit.textContent='Edit';edit.onclick=()=>editCharacter(c);box.append(edit);
+    const del=document.createElement('button');del.textContent='Remove';del.onclick=async()=>{
+     if(!confirm('Remove '+c.name+' from the character list?'))return;
+     const res=await fetch('/api/characters/'+c.id,{method:'DELETE'});const data=await res.json();
+     $('character-status').textContent=res.ok?'Removed '+c.name:data.error;await refreshCharacters();
+    };box.append(del);
+   }return box;
+  }));
+ }catch(e){$('character-status').textContent=e.message;}
+}
+async function editCharacter(existing=null){
+ const name=prompt('Character name:',existing?.name||'');if(name===null)return;
+ const role=prompt('Role (hero or villain):',existing?.role||'villain');if(role===null)return;
+ const bio=prompt('Character description:',existing?.bio||'');if(bio===null)return;
+ const imageUrl=prompt('Image URL (HTTPS or /assets/), optional:',existing?.imageUrl||'');if(imageUrl===null)return;
+ const enabled=existing?confirm('Show this character in Child Mode?'):true;
+ const response=await fetch(existing?'/api/characters/'+existing.id:'/api/characters',{method:existing?'PUT':'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name,role,bio,imageUrl,enabled})});
+ const data=await response.json();$('character-status').textContent=response.ok?'Character saved.':data.error||'Save failed';
+ if(response.ok){const t=await fetch('/api/theme');theme=await t.json();render();await refreshCharacters();}
+}
+$('characters-refresh').onclick=refreshCharacters;
+$('characters-add').onclick=()=>editCharacter();
 function render(){
  $('tonies').replaceChildren(...tonies.map(t=>button('🎧 '+t.name,toneId===t.id,()=>{toneId=t.id;render();})));
  const heroList=theme.characters.filter(c=>c.role==='hero');
@@ -97,7 +127,7 @@ function render(){
 async function init(){
  try{
   const [a,b]=await Promise.all([fetch('/api/theme'),fetch('/api/tonies')]);
-  theme=await a.json();const t=await b.json();tonies=t.tonies;core=[];render();refreshOllama();refreshStories();
+  theme=await a.json();const t=await b.json();tonies=t.tonies;core=[];render();refreshOllama();refreshStories();refreshCharacters();
   const status=await(await fetch('/api/settings/openai')).json();
   $('openai-status').textContent=status.configured?'✓ OpenAI key configured ('+status.source+').':'No OpenAI API key configured yet.';
   notify('Ready. Select your characters and create a story.');
