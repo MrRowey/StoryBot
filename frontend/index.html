@@ -97,8 +97,9 @@ async function editCharacter(existing=null){
  const role=prompt('Role (hero or villain):',existing?.role||'villain');if(role===null)return;
  const bio=prompt('Character description:',existing?.bio||'');if(bio===null)return;
  const imageUrl=prompt('Image URL (HTTPS or /assets/), optional:',existing?.imageUrl||'');if(imageUrl===null)return;
- const enabled=existing?confirm('Show this character in Child Mode?'):true;
- const response=await fetch(existing?'/api/characters/'+existing.id:'/api/characters',{method:existing?'PUT':'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name,role,bio,imageUrl,enabled})});
+ const isExisting=Boolean(existing?.id);
+ const enabled=isExisting?confirm('Show this character in Child Mode?'):true;
+ const response=await fetch(isExisting?'/api/characters/'+existing.id:'/api/characters',{method:isExisting?'PUT':'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name,role,bio,imageUrl,enabled})});
  const data=await response.json();$('character-status').textContent=response.ok?'Character saved.':data.error||'Save failed';
  if(response.ok){const t=await fetch('/api/theme');theme=await t.json();render();await refreshCharacters();}
 }
