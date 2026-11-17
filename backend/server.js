@@ -7,14 +7,17 @@ const port = Number(process.env.PORT || 3080);
 const html = fileURLToPath(new URL('../frontend/index.html', import.meta.url));
 const tonies = [{id:'demo-dragon',name:'Dragon Tonie'},{id:'demo-bear',name:'Bedtime Bear'},{id:'demo-hero',name:'Hero Tonie'}];
 const drafts = new Map();
-let coreIds = [...theme.defaultCoreIds];
+const mainHeroId = 'archie';
 const reply=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(data));};
 async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>20000)throw Error('Request too large');}return JSON.parse(s);}
 const ids=(values,role)=>Array.isArray(values)&&values.every(id=>typeof id==='string'&&theme.characters.some(c=>c.id===id&&c.role===role))&&new Set(values).size===values.length;
 export function validateStory(input){
  if(!input||typeof input!=='object')return 'Invalid request';
  if(!ids(input.heroes,'hero')||!ids(input.villains,'villain'))return 'Invalid character selection';
- if(coreIds.length+input.heroes.filter(id=>!coreIds.includes(id)).length>4)return 'Maximum four heroes including core heroes';
+ if(!ids(input.coreHeroes,'hero')||input.coreHeroes.includes(mainHeroId)||input.heroes.includes(mainHeroId))return 'Invalid core hero selection';
+ if(input.coreHeroes.length>3)return 'Choose up to three core heroes';
+ if(input.heroes.length<1||input.heroes.length>4)return 'Choose one to four guest heroes';
+ if(input.heroes.some(id=>input.coreHeroes.includes(id)))return 'A character cannot be both a core and guest hero';
  if(input.villains.length<1||input.villains.length>3)return 'Choose one to three villains';
  if(!Number.isInteger(input.minutes)||input.minutes<5||input.minutes>10)return 'Choose 5–10 minutes';
  if(typeof input.idea!=='string'||input.idea.trim().length<3||input.idea.length>1200)return 'Enter a story idea (3–1200 characters)';
@@ -22,7 +25,7 @@ export function validateStory(input){
  return null;
 }
 function prompt(input){
- const heroIds=[...new Set([...coreIds,...input.heroes])];
+ const heroIds=[mainHeroId,...input.coreHeroes,...input.heroes];
  const roster=[...heroIds,...input.villains].map(id=>theme.characters.find(c=>c.id===id));
  return `Write one ORIGINAL children's bedtime story for the universe "${theme.name}".
 Universe rules:
@@ -30,7 +33,7 @@ ${theme.rules.map(x=>'- '+x).join('\n')}
 Follow these stages IN ORDER: ${theme.stages.join(' → ')}.
 Locations: ${theme.locations.join(', ')}.
 Familiar sound cues, only where appropriate: ${theme.sounds.join(', ')}.
-Selected characters (do not add unselected named heroes):
+Main character (always central): Superhero Archie.\nCore companions: ${input.coreHeroes.map(id=>theme.characters.find(c=>c.id===id).name).join(', ')||'None'}.\nGuest companions: ${input.heroes.map(id=>theme.characters.find(c=>c.id===id).name).join(', ')}.\nSelected characters (do not add unselected named heroes):
 ${roster.map(c=>c.name+' — '+c.role+': '+c.bio).join('\n')}
 ${input.autoVillain?'Invent one additional gentle, silly villain, while keeping total villains at most three.':''}
 Adventure idea: ${JSON.stringify(input.idea)}
@@ -60,18 +63,13 @@ export function createServer(){
    if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'content-type':'text/html; charset=utf-8'});return res.end(await readFile(html));}
    if(req.method==='GET'&&url.pathname==='/api/status')return reply(res,200,{phase:'story-builder',geminiConfigured:!!process.env.GEMINI_API_KEY,toniesLive:false});
    if(req.method==='GET'&&url.pathname==='/api/tonies')return reply(res,200,{tonies,integrationPending:true});
-   if(req.method==='GET'&&url.pathname==='/api/theme')return reply(res,200,{...theme,coreIds});
-   if(req.method==='PUT'&&url.pathname==='/api/theme/core'){
-    const b=await body(req);
-    if(!ids(b.coreIds,'hero')||b.coreIds.length>4)return reply(res,400,{error:'Choose up to four valid core heroes'});
-    coreIds=[...b.coreIds];return reply(res,200,{coreIds});
-   }
+   if(req.method==='GET'&&url.pathname==='/api/theme')return reply(res,200,{...theme,mainHeroId});
    if(req.method==='POST'&&url.pathname==='/api/story'){
     const b=await body(req);const error=validateStory(b);if(error)return reply(res,400,{error});
     if(b.autoVillain&&b.villains.length>=3)return reply(res,400,{error:'Auto villain requires a free villain slot'});
     const story=await generate(b);
     const id=crypto.randomUUID();
-    const draft={id,...story,approved:false,minutes:b.minutes,heroes:[...new Set([...coreIds,...b.heroes])],villains:b.villains,createdAt:new Date().toISOString()};
+    const draft={id,...story,approved:false,minutes:b.minutes,heroes:[mainHeroId,...b.coreHeroes,...b.heroes],coreHeroes:b.coreHeroes,guestHeroes:b.heroes,villains:b.villains,createdAt:new Date().toISOString()};
     drafts.set(id,draft);return reply(res,200,draft);
    }
    const match=url.pathname.match(/^\/api\/stories\/([a-f0-9-]+)$/);
