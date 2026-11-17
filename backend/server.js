@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { theme } from './theme.js';
+import { createNarration, readNarration } from './tts.js';
 
 const port = Number(process.env.PORT || 3080);
 const html = fileURLToPath(new URL('../frontend/index.html', import.meta.url));
@@ -326,12 +327,29 @@ export function createServer({generateStory=generate}={}){
     const draft=drafts.get(match[1]);if(!draft)return reply(res,404,{error:'Draft not found'});
     const b=await body(req);
     if(typeof b.story!=='string'||b.story.trim().length<200||b.story.length>25000)return reply(res,400,{error:'Story must be 200–25000 characters'});
-    draft.story=b.story;draft.approved=false;return reply(res,200,draft);
+    draft.story=b.story;draft.approved=false;draft.narration=null;return reply(res,200,draft);
    }
    if(req.method==='POST'&&url.pathname.match(/^\/api\/stories\/[a-f0-9-]+\/approve$/)){
     const id=url.pathname.split('/')[3],draft=drafts.get(id);
     if(!draft)return reply(res,404,{error:'Draft not found'});
     draft.approved=true;return reply(res,200,draft);
+   }
+   const narrateMatch=url.pathname.match(/^\/api\/stories\/([a-f0-9-]+)\/narrate$/);
+   if(req.method==='POST'&&narrateMatch){
+    const draft=drafts.get(narrateMatch[1]);
+    if(!draft)return reply(res,404,{error:'Story not found'});
+    if(!draft.approved)return reply(res,403,{error:'Approve the story before generating narration.'});
+    if(draft.narration)return reply(res,200,{audioUrl:'/api/audio/'+draft.narration,alreadyGenerated:true});
+    const result=await createNarration(draft.id,draft.story);
+    draft.narration=result.filename;
+    return reply(res,200,{audioUrl:'/api/audio/'+result.filename,bytes:result.bytes});
+   }
+   const audioMatch=url.pathname.match(/^\/api\/audio\/([a-f0-9-]+\.wav)$/);
+   if(req.method==='GET'&&audioMatch){
+    const file=audioMatch[1];
+    if(![...drafts.values()].some(d=>d.narration===file))return reply(res,404,{error:'Audio not found'});
+    const wav=await readNarration(file);
+    res.writeHead(200,{'content-type':'audio/wav','content-length':wav.length,'cache-control':'no-store','content-disposition':'inline; filename="'+file+'"'});return res.end(wav);
    }
    if(req.method==='POST'&&url.pathname==='/api/upload')return reply(res,501,{error:'Tonies upload is not implemented'});
    return reply(res,404,{error:'Not found'});
