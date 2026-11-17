@@ -44,7 +44,7 @@ Return JSON ONLY with keys "title" and "story". No Markdown.`;
 async function generate(input){
  const key=process.env.GEMINI_API_KEY;
  if(!key)throw Object.assign(new Error('GEMINI_API_KEY is not configured on the server.'),{status:503});
- const model=process.env.GEMINI_MODEL||'gemini-2.5-flash';
+ const model=process.env.GEMINI_MODEL||'gemini-3.8-flash';
  let response;
  try{
   response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{
