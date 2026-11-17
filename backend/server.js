@@ -11,6 +11,7 @@ const mainHeroId = 'archie';
 let sessionGeminiKey = null;
 let sessionOpenAIKey = null;
 let selectedOllamaModel = process.env.OLLAMA_MODEL || '';
+const ollamaBase=(process.env.OLLAMA_BASE_URL||'http://127.0.0.1:11434').replace(/\\/$/,'');
 const activeOpenAIKey=()=>sessionOpenAIKey||process.env.OPENAI_API_KEY||'';
 const openAIModel=()=>process.env.OPENAI_MODEL||'gpt-4.1-mini';
 const activeGeminiKey=()=>sessionGeminiKey||process.env.GEMINI_API_KEY||'';
@@ -125,34 +126,51 @@ async function generateOpenAI(input){
  return {title:result.title.slice(0,120),story:result.story,model,provider:'openai'};
 }
 const minimumStoryCharacters=8000;
-async function ollamaText(model,instruction,maxTokens=3000){
+async function ollamaText(model,instruction,maxTokens=3000,onProgress=()=>{},stage='Writing'){
  let response;
- try{response=await fetch('http://127.0.0.1:11434/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,prompt:instruction,stream:false,options:{temperature:0.7,num_predict:maxTokens}}),signal:AbortSignal.timeout(240000)});}
+ try{response=await fetch(ollamaBase+'/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,prompt:instruction,stream:true,keep_alive:'15m',options:{temperature:0.7,num_predict:maxTokens}}),signal:AbortSignal.timeout(360000)});}
  catch(e){throw Object.assign(new Error('Ollama connection failed or timed out: '+e.message),{status:502});}
- const data=await response.json().catch(()=>({}));
- if(!response.ok)throw Object.assign(new Error('Ollama HTTP '+response.status+': '+String(data.error||'Unknown error').slice(0,250)),{status:502});
- return String(data.response||'').trim();
+ if(!response.ok){const data=await response.json().catch(()=>({}));throw Object.assign(new Error('Ollama HTTP '+response.status+': '+String(data.error||'Unknown error').slice(0,250)),{status:502});}
+ let output='',buffer='',lastUpdate=0;
+ const decoder=new TextDecoder();
+ for await(const chunk of response.body){
+  buffer+=decoder.decode(chunk,{stream:true});
+  let index;
+  while((index=buffer.indexOf('\n'))!==-1){
+   const line=buffer.slice(0,index).trim();buffer=buffer.slice(index+1);
+   if(!line)continue;
+   const data=JSON.parse(line);
+   if(data.error)throw Object.assign(new Error('Ollama: '+data.error),{status:502});
+   output+=data.response||'';
+   const now=Date.now();
+   if(now-lastUpdate>350){onProgress({stage,generatedCharacters:output.length});lastUpdate=now;}
+  }
+ }
+ onProgress({stage,generatedCharacters:output.length});
+ return output.trim();
 }
-async function generateOllama(input){
+async function generateOllama(input,onProgress=()=>{}){
  const model=selectedOllamaModel;
  if(!model)throw Object.assign(new Error('Choose an installed Ollama model in Parent Settings first.'),{status:503});
  const instructions=prompt(input);
- const initial=await ollamaText(model,instructions+'\nReturn valid JSON with title and story. Write as much detailed narrative as possible; story must be at least 8000 characters.',3500);
+ onProgress({stage:'Preparing story',characters:0,target:minimumStoryCharacters,model});
+ const initial=await ollamaText(model,instructions+'\nReturn valid JSON with title and story. Write as much detailed narrative as possible; story must be at least 8000 characters.',3500,p=>onProgress({...p,characters:0,target:minimumStoryCharacters}),'Writing first draft');
  let result;
  try{result=JSON.parse(initial);}catch{throw Object.assign(new Error('Ollama returned invalid story JSON. Try another model.'),{status:502});}
  if(typeof result.title!=='string'||typeof result.story!=='string'||result.story.length<200)throw Object.assign(new Error('Ollama returned an incomplete story.'),{status:502});
  let story=result.story.trim();
- // Preserve the existing ending, inserting extra story scenes before it.
+ onProgress({stage:'Checking first draft',characters:story.length,target:minimumStoryCharacters});
  for(let attempt=0;story.length<minimumStoryCharacters&&attempt<6;attempt++){
   const paragraphs=story.split(/\n\s*\n/);
   const ending=paragraphs.length>1?paragraphs.pop():'';
   const prefix=paragraphs.length?paragraphs.join('\n\n'):story;
-  const recent=prefix.slice(-3500);
+  const recent=prefix.slice(-2000);
+  const base=story.length;
   const extra=await ollamaText(model,
-   'Expand an existing gentle Bricksburg bedtime story by writing ONE NEW SCENE of at least 1400 characters. Do not restart, summarize, or conclude the story. No headings or JSON. Keep characters, tone, plot, and locations consistent. No violence. The ending is already written and will be restored after your scene.\nOriginal instructions:\n'+instructions+'\nLatest story context:\n'+recent+'\nWrite only the new scene that fits immediately before the bedtime ending.',2200);
+   'Write ONE NEW SCENE of at least 1400 characters to expand this gentle Bricksburg bedtime story. No headings, JSON, recap, or ending. Continue the plot naturally and keep the characters consistent.\n'+instructions+'\nRecent context:\n'+recent,1800,p=>onProgress({...p,stage:'Expanding story · scene '+(attempt+1),characters:base+p.generatedCharacters,target:minimumStoryCharacters}),'Expanding story · scene '+(attempt+1));
   if(extra.length<250)break;
   story=prefix+'\n\n'+extra+'\n\n'+ending;
-  console.log('Ollama story expansion:',{attempt:attempt+1,characters:story.length,target:minimumStoryCharacters});
+  onProgress({stage:'Checking story length',characters:story.length,target:minimumStoryCharacters});
  }
  if(story.length<minimumStoryCharacters)throw Object.assign(new Error('Ollama generated '+story.length+' characters, below the 8000-character minimum. Try a larger model or generate again.'),{status:502});
  return {title:result.title.slice(0,120),story,model,provider:'ollama',characterCount:story.length};
@@ -166,7 +184,7 @@ export function createServer({generateStory=generate}={}){
    if(req.method==='GET'&&url.pathname==='/api/status')return reply(res,200,{phase:'story-builder',geminiConfigured:!!activeGeminiKey(),openaiConfigured:!!activeOpenAIKey(),provider:'ollama',ollamaModel:selectedOllamaModel,toniesLive:false});
    if(req.method==='GET'&&url.pathname==='/api/settings/ollama'){
     try{
-     const response=await fetch('http://127.0.0.1:11434/api/tags',{signal:AbortSignal.timeout(5000)});
+     const response=await fetch(ollamaBase+'/api/tags',{signal:AbortSignal.timeout(5000)});
      if(!response.ok)throw Error('HTTP '+response.status);
      const data=await response.json();
      const models=(data.models||[]).map(m=>m.name);
@@ -178,7 +196,7 @@ export function createServer({generateStory=generate}={}){
     const b=await body(req);
     if(typeof b.model!=='string'||!b.model||b.model.length>200)return reply(res,400,{error:'Select a model.'});
     try{
-     const response=await fetch('http://127.0.0.1:11434/api/tags',{signal:AbortSignal.timeout(5000)});
+     const response=await fetch(ollamaBase+'/api/tags',{signal:AbortSignal.timeout(5000)});
      if(!response.ok)throw Error('Ollama unavailable');
      const data=await response.json();
      if(!(data.models||[]).some(m=>m.name===b.model))return reply(res,400,{error:'Model is not installed in Ollama.'});
@@ -226,6 +244,20 @@ export function createServer({generateStory=generate}={}){
    }
    if(req.method==='GET'&&url.pathname==='/api/tonies')return reply(res,200,{tonies,integrationPending:true});
    if(req.method==='GET'&&url.pathname==='/api/theme')return reply(res,200,{...theme,mainHeroId});
+   if(req.method==='POST'&&url.pathname==='/api/story/stream'){
+    const b=await body(req);const error=validateStory(b);
+    if(error)return reply(res,400,{error});
+    if(b.autoVillain&&b.villains.length>=3)return reply(res,400,{error:'Auto villain requires a free villain slot'});
+    res.writeHead(200,{'content-type':'application/x-ndjson; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});
+    const send=(type,data)=>{if(!res.destroyed)res.write(JSON.stringify({type,...data})+'\n');};
+    try{
+     const story=await generateOllama(b,progress=>send('progress',progress));
+     const id=crypto.randomUUID();
+     const draft={id,...story,approved:false,minutes:b.minutes,heroes:[mainHeroId,...b.coreHeroes,...b.heroes],coreHeroes:b.coreHeroes,guestHeroes:b.heroes,villains:b.villains,createdAt:new Date().toISOString()};
+     drafts.set(id,draft);send('complete',{draft});
+    }catch(e){send('error',{error:e.message});}
+    return res.end();
+   }
    if(req.method==='POST'&&url.pathname==='/api/story'){
     const b=await body(req);const error=validateStory(b);if(error)return reply(res,400,{error});
     if(b.autoVillain&&b.villains.length>=3)return reply(res,400,{error:'Auto villain requires a free villain slot'});
