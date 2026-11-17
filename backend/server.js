@@ -9,6 +9,9 @@ const tonies = [{id:'demo-dragon',name:'Dragon Tonie'},{id:'demo-bear',name:'Bed
 const drafts = new Map();
 const mainHeroId = 'archie';
 let sessionGeminiKey = null;
+let sessionOpenAIKey = null;
+const activeOpenAIKey=()=>sessionOpenAIKey||process.env.OPENAI_API_KEY||'';
+const openAIModel=()=>process.env.OPENAI_MODEL||'gpt-4.1-mini';
 const activeGeminiKey=()=>sessionGeminiKey||process.env.GEMINI_API_KEY||'';
 const reply=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(data));};
 async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>20000)throw Error('Request too large');}return JSON.parse(s);}
@@ -43,7 +46,7 @@ Target duration: ${input.minutes} minutes spoken at about 125 words per minute. 
 Keep the narrative warm, coherent and age-appropriate. Do not portray physical combat. All selected heroes should matter; villains become cozy and sleepy. Include all five stages naturally without headings in the narrated text.
 Return JSON ONLY with keys "title" and "story". No Markdown.`;
 }
-async function generate(input){
+async function generateGemini(input){
  const key=activeGeminiKey();
  if(!key)throw Object.assign(new Error('GEMINI_API_KEY is not configured on the server.'),{status:503});
  const model=process.env.GEMINI_MODEL||'gemini-3.8-flash';
@@ -92,12 +95,55 @@ async function generate(input){
   throw Object.assign(new Error('Gemini returned an incomplete story. Try generating again.'),{status:502});
  return {title:result.title.slice(0,120),story:result.story};
 }
+async function generateOpenAI(input){
+ const key=activeOpenAIKey();
+ if(!key)throw Object.assign(new Error('Configure an OpenAI API key in Parent Settings first.'),{status:503});
+ const model=openAIModel();
+ let response;
+ try{
+  response=await fetch('https://api.openai.com/v1/responses',{
+   method:'POST',
+   headers:{'content-type':'application/json','authorization':'Bearer '+key},
+   body:JSON.stringify({model,input:prompt(input),text:{format:{type:'json_object'}}}),
+   signal:AbortSignal.timeout(90000)
+  });
+ }catch(e){
+  console.error('OpenAI connection error:',e.message);
+  throw Object.assign(new Error('OpenAI request timed out or could not connect.'),{status:502});
+ }
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok){
+  const msg=String(data.error?.message||'Unknown API error').slice(0,300);
+  console.error('OpenAI API failure:',{status:response.status,model,message:msg});
+  throw Object.assign(new Error('OpenAI HTTP '+response.status+': '+msg),{status:response.status===429?429:502});
+ }
+ const raw=(data.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text||'').join('');
+ let result;
+ try{result=JSON.parse(raw);}catch{throw Object.assign(new Error('OpenAI did not return valid story JSON.'),{status:502});}
+ if(typeof result.title!=='string'||typeof result.story!=='string'||result.story.length<200)throw Object.assign(new Error('OpenAI returned an incomplete story.'),{status:502});
+ return {title:result.title.slice(0,120),story:result.story,model,provider:'openai'};
+}
+async function generate(input){return generateOpenAI(input);}
 export function createServer({generateStory=generate}={}){
  return http.createServer(async(req,res)=>{
   try{
    const url=new URL(req.url,'http://localhost');
    if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'content-type':'text/html; charset=utf-8'});return res.end(await readFile(html));}
-   if(req.method==='GET'&&url.pathname==='/api/status')return reply(res,200,{phase:'story-builder',geminiConfigured:!!activeGeminiKey(),toniesLive:false});
+   if(req.method==='GET'&&url.pathname==='/api/status')return reply(res,200,{phase:'story-builder',geminiConfigured:!!activeGeminiKey(),openaiConfigured:!!activeOpenAIKey(),provider:'openai',toniesLive:false});
+   if(req.method==='GET'&&url.pathname==='/api/settings/openai')return reply(res,200,{configured:!!activeOpenAIKey(),model:openAIModel(),source:sessionOpenAIKey?'web session':process.env.OPENAI_API_KEY?'environment':'none'});
+   if(req.method==='POST'&&(url.pathname==='/api/settings/openai/test'||url.pathname==='/api/settings/openai')){
+    const b=await body(req);
+    const key=typeof b.key==='string'&&b.key.trim()?b.key.trim():activeOpenAIKey();
+    if(!key||key.length>512)return reply(res,400,{error:'Enter an OpenAI API key.'});
+    let response;
+    try{response=await fetch('https://api.openai.com/v1/models',{headers:{authorization:'Bearer '+key},signal:AbortSignal.timeout(15000)});}
+    catch(e){return reply(res,502,{error:'Could not reach OpenAI: '+e.message});}
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)return reply(res,400,{verified:false,error:'OpenAI rejected the key (HTTP '+response.status+'): '+String(data.error?.message||'Unknown error').slice(0,250)});
+    const models=(data.data||[]).map(m=>m.id).filter(id=>id.startsWith('gpt-')).sort();
+    if(url.pathname==='/api/settings/openai')sessionOpenAIKey=key;
+    return reply(res,200,{verified:true,configured:url.pathname==='/api/settings/openai',message:url.pathname==='/api/settings/openai'?'Key verified and activated until server restart.':'Key accepted by OpenAI. Model access and billing must still be checked with a generation request.',model:openAIModel(),models});
+   }
    if(req.method==='GET'&&url.pathname==='/api/settings/gemini')return reply(res,200,{configured:!!activeGeminiKey(),source:sessionGeminiKey?'web session':process.env.GEMINI_API_KEY?'environment':'none',model:process.env.GEMINI_MODEL||'gemini-3.8-flash'});
    if(req.method==='POST'&&url.pathname==='/api/settings/gemini/test'){
     const b=await body(req);
