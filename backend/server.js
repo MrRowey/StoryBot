@@ -1,5 +1,6 @@
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { theme } from './theme.js';
 
@@ -9,6 +10,11 @@ const childHtml = fileURLToPath(new URL('../frontend/child.html', import.meta.ur
 const tonies = [{id:'demo-dragon',name:'Dragon Tonie'},{id:'demo-bear',name:'Bedtime Bear'},{id:'demo-hero',name:'Hero Tonie'}];
 const drafts = new Map();
 const mainHeroId = 'archie';
+const characterFile=join(process.env.STORYBOT_DATA_DIR||fileURLToPath(new URL('../data',import.meta.url)),'characters.json');
+let charactersLoaded=false;
+async function loadCharacters(){if(charactersLoaded)return;try{const saved=JSON.parse(await readFile(characterFile,'utf8'));if(Array.isArray(saved))theme.characters=saved;}catch(e){if(e.code!=='ENOENT')console.error('Character file load error:',e.message);}charactersLoaded=true;}
+async function saveCharacters(){await mkdir(dirname(characterFile),{recursive:true});await writeFile(characterFile,JSON.stringify(theme.characters,null,2),'utf8');}
+function validCharacter(c){return c&&typeof c.name==='string'&&c.name.trim().length>=2&&c.name.length<=80&&typeof c.bio==='string'&&c.bio.trim().length>=5&&c.bio.length<=800&&['hero','villain'].includes(c.role)&&(!c.imageUrl||typeof c.imageUrl==='string'&&c.imageUrl.length<=500&&(/^https:\/\//.test(c.imageUrl)||/^\/assets\//.test(c.imageUrl)));}
 let sessionGeminiKey = null;
 let sessionOpenAIKey = null;
 let selectedOllamaModel = process.env.OLLAMA_MODEL || '';
@@ -197,6 +203,7 @@ async function generate(input){return generateOllama(input);}
 export function createServer({generateStory=generate}={}){
  return http.createServer(async(req,res)=>{
   try{
+   await loadCharacters();
    const url=new URL(req.url,'http://localhost');
    if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'content-type':'text/html; charset=utf-8'});return res.end(await readFile(childHtml));}
    if(req.method==='GET'&&url.pathname==='/parent'){res.writeHead(200,{'content-type':'text/html; charset=utf-8'});return res.end(await readFile(html));}
@@ -261,9 +268,26 @@ export function createServer({generateStory=generate}={}){
     sessionGeminiKey=key;
     return reply(res,200,{configured:true,message:'Verified and saved for this server session. Restarting StoryBot clears this key.'});
    }
+   if(req.method==='GET'&&url.pathname==='/api/characters')return reply(res,200,{characters:theme.characters});
+   if(req.method==='POST'&&url.pathname==='/api/characters'){
+    const b=await body(req);if(!validCharacter(b))return reply(res,400,{error:'Provide a name, role, description and optional HTTPS image URL.'});
+    const c={id:'custom-'+crypto.randomUUID(),name:b.name.trim(),role:b.role,bio:b.bio.trim(),imageUrl:b.imageUrl||'',enabled:true};
+    theme.characters.push(c);await saveCharacters();return reply(res,201,c);
+   }
+   const characterMatch=url.pathname.match(/^\/api\/characters\/([a-z0-9-]+)$/);
+   if(characterMatch&&['PUT','DELETE'].includes(req.method)){
+    const i=theme.characters.findIndex(c=>c.id===characterMatch[1]);
+    if(i<0)return reply(res,404,{error:'Character not found'});
+    if(theme.characters[i].id==='archie')return reply(res,403,{error:'Superhero Archie is required and cannot be edited or removed.'});
+    if(req.method==='DELETE'){const [deleted]=theme.characters.splice(i,1);await saveCharacters();return reply(res,200,{deleted:deleted.id});}
+    const b=await body(req);const updated={...theme.characters[i],...b,id:theme.characters[i].id};
+    if(!validCharacter(updated)||typeof updated.enabled!=='boolean')return reply(res,400,{error:'Invalid character details.'});
+    theme.characters[i]={id:updated.id,name:updated.name.trim(),role:updated.role,bio:updated.bio.trim(),imageUrl:updated.imageUrl||'',enabled:updated.enabled};
+    await saveCharacters();return reply(res,200,theme.characters[i]);
+   }
    if(req.method==='GET'&&url.pathname==='/api/stories')return reply(res,200,{stories:[...drafts.values()].map(d=>({id:d.id,title:d.title,approved:d.approved,createdAt:d.createdAt,characterCount:d.story.length}))});
    if(req.method==='GET'&&url.pathname==='/api/tonies')return reply(res,200,{tonies,integrationPending:true});
-   if(req.method==='GET'&&url.pathname==='/api/theme')return reply(res,200,{...theme,mainHeroId});
+   if(req.method==='GET'&&url.pathname==='/api/theme')return reply(res,200,{...theme,characters:theme.characters.filter(c=>c.enabled!==false),mainHeroId});
    if(req.method==='POST'&&url.pathname==='/api/story/stream'){
     const b=await body(req);const error=validateStory(b);
     if(error)return reply(res,400,{error});
