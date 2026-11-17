@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-const dataDir=process.env.STORYBOT_DATA_DIR||new URL('../data/',import.meta.url).pathname;
+import { fileURLToPath } from 'node:url';
+const dataDir=process.env.STORYBOT_DATA_DIR||fileURLToPath(new URL('../data/',import.meta.url));
 export async function createNarration(storyId,text){
  if(process.platform!=='win32')throw Object.assign(new Error('Windows speech is available only on Windows. A cross-platform TTS engine will be added for Docker.'),{status:501});
  const folder=join(dataDir,'audio');await mkdir(folder,{recursive:true});
