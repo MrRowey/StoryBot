@@ -5,6 +5,7 @@ import { theme } from './theme.js';
 
 const port = Number(process.env.PORT || 3080);
 const html = fileURLToPath(new URL('../frontend/index.html', import.meta.url));
+const childHtml = fileURLToPath(new URL('../frontend/child.html', import.meta.url));
 const tonies = [{id:'demo-dragon',name:'Dragon Tonie'},{id:'demo-bear',name:'Bedtime Bear'},{id:'demo-hero',name:'Hero Tonie'}];
 const drafts = new Map();
 const mainHeroId = 'archie';
@@ -197,7 +198,8 @@ export function createServer({generateStory=generate}={}){
  return http.createServer(async(req,res)=>{
   try{
    const url=new URL(req.url,'http://localhost');
-   if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'content-type':'text/html; charset=utf-8'});return res.end(await readFile(html));}
+   if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'content-type':'text/html; charset=utf-8'});return res.end(await readFile(childHtml));}
+   if(req.method==='GET'&&url.pathname==='/parent'){res.writeHead(200,{'content-type':'text/html; charset=utf-8'});return res.end(await readFile(html));}
    if(req.method==='GET'&&url.pathname==='/api/status')return reply(res,200,{phase:'story-builder',geminiConfigured:!!activeGeminiKey(),openaiConfigured:!!activeOpenAIKey(),provider:'ollama',ollamaModel:selectedOllamaModel,toniesLive:false});
    if(req.method==='GET'&&url.pathname==='/api/settings/ollama'){
     try{
@@ -259,6 +261,7 @@ export function createServer({generateStory=generate}={}){
     sessionGeminiKey=key;
     return reply(res,200,{configured:true,message:'Verified and saved for this server session. Restarting StoryBot clears this key.'});
    }
+   if(req.method==='GET'&&url.pathname==='/api/stories')return reply(res,200,{stories:[...drafts.values()].map(d=>({id:d.id,title:d.title,approved:d.approved,createdAt:d.createdAt,characterCount:d.story.length}))});
    if(req.method==='GET'&&url.pathname==='/api/tonies')return reply(res,200,{tonies,integrationPending:true});
    if(req.method==='GET'&&url.pathname==='/api/theme')return reply(res,200,{...theme,mainHeroId});
    if(req.method==='POST'&&url.pathname==='/api/story/stream'){
