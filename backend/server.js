@@ -149,6 +149,21 @@ async function ollamaText(model,instruction,maxTokens=3000,onProgress=()=>{},sta
  onProgress({stage,generatedCharacters:output.length});
  return output.trim();
 }
+function cleanNarration(value){
+ if(typeof value!=='string')return '';
+ let text=value.trim();
+ for(let i=0;i<3;i++){
+  let parsed;
+  try{parsed=JSON.parse(text);}catch{break;}
+  if(typeof parsed==='string'){text=parsed.trim();continue;}
+  if(parsed&&typeof parsed==='object'&&typeof parsed.story==='string'){text=parsed.story.trim();continue;}
+  break;
+ }
+ // Reject malformed JSON rather than exposing structural metadata in narration.
+ if(/^\s*\{\s*"(?:title|story)"\s*:/i.test(text)||/^\s*"(?:title|story)"\s*:/i.test(text))return '';
+ text=text.replace(/\\n/g,'\n').replace(/\\r/g,'').replace(/\\t/g,' ');
+ return text.trim();
+}
 async function generateOllama(input,onProgress=()=>{}){
  const model=selectedOllamaModel;
  if(!model)throw Object.assign(new Error('Choose an installed Ollama model in Parent Settings first.'),{status:503});
@@ -158,7 +173,8 @@ async function generateOllama(input,onProgress=()=>{}){
  let result;
  try{result=JSON.parse(initial);}catch{throw Object.assign(new Error('Ollama returned invalid story JSON. Try another model.'),{status:502});}
  if(typeof result.title!=='string'||typeof result.story!=='string'||result.story.length<200)throw Object.assign(new Error('Ollama returned an incomplete story.'),{status:502});
- let story=result.story.trim();
+ let story=cleanNarration(result.story);
+ if(story.length<200)throw Object.assign(new Error('Ollama returned JSON metadata instead of a usable story.'),{status:502});
  onProgress({stage:'Checking first draft',characters:story.length,target:minimumStoryCharacters});
  for(let attempt=0;story.length<minimumStoryCharacters&&attempt<6;attempt++){
   const paragraphs=story.split(/\n\s*\n/);
@@ -168,8 +184,9 @@ async function generateOllama(input,onProgress=()=>{}){
   const base=story.length;
   const extra=await ollamaText(model,
    'Write ONE NEW SCENE of at least 1400 characters to expand this gentle Bricksburg bedtime story. No headings, JSON, recap, or ending. Continue the plot naturally and keep the characters consistent.\n'+instructions+'\nRecent context:\n'+recent,1800,p=>onProgress({...p,stage:'Expanding story · scene '+(attempt+1),characters:base+p.generatedCharacters,target:minimumStoryCharacters}),'Expanding story · scene '+(attempt+1));
-  if(extra.length<250)break;
-  story=prefix+'\n\n'+extra+'\n\n'+ending;
+  const scene=cleanNarration(extra);
+  if(scene.length<250)break;
+  story=prefix+'\n\n'+scene+'\n\n'+ending;
   onProgress({stage:'Checking story length',characters:story.length,target:minimumStoryCharacters});
  }
  if(story.length<minimumStoryCharacters)throw Object.assign(new Error('Ollama generated '+story.length+' characters, below the 8000-character minimum. Try a larger model or generate again.'),{status:502});
