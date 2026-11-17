@@ -1,12 +1,12 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>StoryBot · Make an adventure</title><style>
-:root{font-family:system-ui,sans-serif;color:#1c3156;background:#eaf2ff}*{box-sizing:border-box}body{margin:0}main{max-width:850px;margin:auto;padding:16px}header{display:flex;justify-content:space-between;align-items:center;gap:12px}h1{font-size:1.5rem}h2{font-size:clamp(1.5rem,5vw,2.5rem);margin:8px 0}p{line-height:1.5}a{color:#294f99}section{background:white;border-radius:24px;padding:clamp(20px,5vw,36px);box-shadow:0 6px 22px #16346615;margin:18px 0}button,textarea{font:inherit}button{min-height:60px;border:2px solid #d3dff4;background:white;color:#1d3d78;border-radius:18px;padding:14px;cursor:pointer;font-weight:700}button:focus-visible,textarea:focus-visible{outline:4px solid #f6a928}button.selected{background:#dbe9ff;border-color:#2456af}button.primary{background:#2456af;color:white;border-color:#2456af}button:disabled{opacity:.5}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.choice{min-height:100px;font-size:1.12rem}.nav{display:flex;justify-content:space-between;gap:12px;margin-top:24px}.nav button{min-width:125px}.muted{color:#526783}.steps{font-weight:700;color:#365c9e}textarea{width:100%;min-height:130px;padding:16px;border:2px solid #b6c9ea;border-radius:16px;font-size:1.1rem}#status{padding:14px;background:#eaf2ff;border-radius:12px}progress{width:100%;height:22px}small{color:#526783} [hidden]{display:none!important}
+:root{font-family:system-ui,sans-serif;color:#1c3156;background:#eaf2ff}*{box-sizing:border-box}body{margin:0}main{max-width:850px;margin:auto;padding:16px}header{display:flex;justify-content:space-between;align-items:center;gap:12px}h1{font-size:1.5rem}h2{font-size:clamp(1.5rem,5vw,2.5rem);margin:8px 0}p{line-height:1.5}a{color:#294f99}section{background:white;border-radius:24px;padding:clamp(20px,5vw,36px);box-shadow:0 6px 22px #16346615;margin:18px 0}button,textarea{font:inherit}button{min-height:60px;border:2px solid #d3dff4;background:white;color:#1d3d78;border-radius:18px;padding:14px;cursor:pointer;font-weight:700}button:focus-visible,textarea:focus-visible{outline:4px solid #f6a928}button.selected{background:#dbe9ff;border-color:#2456af}button.primary{background:#2456af;color:white;border-color:#2456af}button:disabled{opacity:.5}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.choice{min-height:100px;font-size:1.12rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}.choice img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px;max-height:180px}.nav{display:flex;justify-content:space-between;gap:12px;margin-top:24px}.nav button{min-width:125px}.muted{color:#526783}.steps{font-weight:700;color:#365c9e}textarea{width:100%;min-height:130px;padding:16px;border:2px solid #b6c9ea;border-radius:16px;font-size:1.1rem}#status{padding:14px;background:#eaf2ff;border-radius:12px}progress{width:100%;height:22px}small{color:#526783} [hidden]{display:none!important}
 </style></head><body><main><header><h1>📖 StoryBot</h1><a href="/parent">🔒 Grown-ups</a></header><section><p class="steps" id="step-label">Step 1 of 4</p><h2 id="heading">Choose your Tonie 🎧</h2><p class="muted" id="help">Which Tonie will hold your adventure?</p><div id="choices" class="grid"></div><div id="idea-panel" hidden><textarea id="idea" placeholder="Tell us what happens in your adventure..."></textarea><div class="nav"><button id="speak">🎙 Speak my idea</button><button id="surprise">✨ Surprise me!</button></div><small>You can type, speak, or choose a surprise adventure.</small></div><div id="progress-panel" hidden><p id="progress-stage">Getting your adventure ready...</p><progress id="progress" max="8000" value="0"></progress><p id="count">0 / 8,000 characters</p></div><p id="status" role="status">Let's make a bedtime adventure!</p><div class="nav"><button id="back">← Back</button><button id="next" class="primary">Next →</button></div></section></main>
 <script>
 let theme,tonies=[],step=0,toneId='',core=[],guests=[],villains=[],autoVillain=false,recognition=null;
 const $=id=>document.getElementById(id);
 const steps=[['Choose your Tonie 🎧','Which Tonie will hold your adventure?'],['Pick your superhero friends 🦸','Archie is always the main hero! Choose up to 3 best friends.'],['Choose some silly troublemakers 🦹','Choose up to 3 silly villains.'],['What happens in your adventure? 🌟','Tell us an idea, or let StoryBot surprise you!']];
 function status(s){$('status').textContent=s;}
-function tile(label,active,fn){const b=document.createElement('button');b.className='choice'+(active?' selected':'');b.textContent=label;b.setAttribute('aria-pressed',String(active));b.onclick=fn;return b;}
+function tile(label,active,fn,imageUrl=''){const b=document.createElement('button');b.className='choice'+(active?' selected':'');if(imageUrl){const img=document.createElement('img');img.src=imageUrl;img.alt='';img.loading='lazy';b.append(img);}const caption=document.createElement('span');caption.textContent=label;b.append(caption);b.setAttribute('aria-pressed',String(active));b.onclick=fn;return b;}
 function render(){
  $('step-label').textContent='Step '+(step+1)+' of 4';$('heading').textContent=steps[step][0];$('help').textContent=steps[step][1];
  $('choices').hidden=step===3;$('idea-panel').hidden=step!==3;$('progress-panel').hidden=true;
@@ -22,14 +22,14 @@ function render(){
    else if(guests.length<4)guests.push(c.id);
    else {status('You have picked the maximum number of friends.');return;}
    render();
-  }));
+  },c.imageUrl));
  }
  if(step===2){
   for(const c of theme.characters.filter(c=>c.role==='villain'))choices.push(tile('🦹 '+c.name,villains.includes(c.id),()=>{
    if(villains.includes(c.id))villains=villains.filter(x=>x!==c.id);
    else if(villains.length+(autoVillain?1:0)<3)villains.push(c.id);
    else {status('Choose up to three villains.');return;}render();
-  }));
+  },c.imageUrl));
   choices.push(tile('✨ Surprise villain',autoVillain,()=>{if(!autoVillain&&villains.length>=3){status('Choose up to three villains.');return;}autoVillain=!autoVillain;render();}));
  }
  $('choices').replaceChildren(...choices);
