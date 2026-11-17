@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>StoryBot</title>
+<style>body{font:16px system-ui;background:#f2f5fa;color:#17243a;margin:0}.wrap{max-width:760px;margin:30px auto;padding:0 18px}header,section{padding:22px;border-radius:16px;margin-bottom:16px}header{background:#253f76;color:white}section{background:white}button,select,textarea{font:inherit;border-radius:9px;padding:10px}button{cursor:pointer;background:#285bc2;color:white;border:0;margin:6px}button:focus-visible{outline:3px solid orange}textarea{display:block;width:95%;min-height:80px}.tonies{display:flex;flex-wrap:wrap}.selected{outline:3px solid #e8a100}pre{white-space:pre-wrap}</style></head>
+<body><main class="wrap"><header><h1>📖 StoryBot</h1><p>Create an adventure for your Creative-Tonie</p></header>
+<section><h2>1. Choose a Tonie</h2><div class="tonies" id="tonies"></div></section>
+<section><h2>2. Make a story</h2><label for="idea">Story idea</label><textarea id="idea" placeholder="A friendly dragon explores the stars"></textarea><label for="minutes">Length</label><select id="minutes"><option value="5">5 minutes</option><option value="6">6 minutes</option><option value="7">7 minutes</option><option value="8">8 minutes</option><option value="9">9 minutes</option><option value="10">10 minutes</option></select><button id="generate">Create demo story</button><h3 id="title"></h3><pre id="story"></pre></section>
+<section><h2>3. Tonies upload</h2><p>Uploads are intentionally disabled in this foundation release. No account data or existing chapters will be changed.</p><p id="status" role="status">Loading…</p></section></main>
+<script>
+let selected = null;
+const status = document.getElementById('status');
+(async () => {
+ try {
+  const r = await fetch('/api/tonies'); const data = await r.json();
+  const box = document.getElementById('tonies');
+  for (const t of data.tonies) {
+   const b = document.createElement('button'); b.textContent = '🎧 ' + t.name;
+   b.onclick = () => { selected = t.id; for(const el of box.children) el.classList.remove('selected'); b.classList.add('selected'); };
+   box.append(b);
+  }
+  status.textContent = data.integrationPending ? 'Live Tonies integration is not implemented yet.' : 'Demo mode — no cloud changes.';
+ } catch(e) { status.textContent = e.message; }
+})();
+document.getElementById('generate').onclick = async () => {
+ try {
+  const r = await fetch('/api/story',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({idea:document.getElementById('idea').value,minutes:Number(document.getElementById('minutes').value)})});
+  const d = await r.json(); if(!r.ok) throw Error(d.error);
+  document.getElementById('title').textContent=d.title;
+  document.getElementById('story').textContent=d.story;
+  status.textContent='Demo story generated. Selected Tonie: '+(selected||'none')+'. No audio created or uploaded.';
+ } catch(e){status.textContent=e.message;}
+};
+</script></body></html>
