@@ -268,6 +268,16 @@ export function createServer({generateStory=generate}={}){
     sessionGeminiKey=key;
     return reply(res,200,{configured:true,message:'Verified and saved for this server session. Restarting StoryBot clears this key.'});
    }
+   if(req.method==='POST'&&url.pathname==='/api/characters/suggest-villain'){
+    const b=await body(req);
+    const idea=typeof b.idea==='string'?b.idea.slice(0,500):'A gentle silly bedtime adventure in Bricksburg';
+    if(!selectedOllamaModel)return reply(res,503,{error:'Select an Ollama model first.'});
+    const raw=await ollamaText(selectedOllamaModel,'Invent ONE original, gentle, funny, nonviolent villain for a LEGO-inspired bedtime story in Bricksburg. Story idea: '+idea+'\nReturn only valid JSON with keys "name" and "bio". The bio should describe appearance, silly mischief and a peaceful resolution. Avoid scary or violent themes.',400);
+    let suggested;try{suggested=JSON.parse(raw);}catch{return reply(res,502,{error:'Ollama did not return valid villain details. Try again.'});}
+    const villain={name:suggested.name,role:'villain',bio:suggested.bio,imageUrl:''};
+    if(!validCharacter(villain))return reply(res,502,{error:'Ollama returned incomplete villain details.'});
+    return reply(res,200,{villain,pendingApproval:true});
+   }
    if(req.method==='GET'&&url.pathname==='/api/characters')return reply(res,200,{characters:theme.characters});
    if(req.method==='POST'&&url.pathname==='/api/characters'){
     const b=await body(req);if(!validCharacter(b))return reply(res,400,{error:'Provide a name, role, description and optional HTTPS image URL.'});
