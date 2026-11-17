@@ -10,12 +10,12 @@ test('Bricksburg theme, selection validation and approval safeguards',async()=>{
  try{
   const theme=await(await request('/api/theme')).json();
   assert.equal(theme.id,'bricksburg');
-  assert.deepEqual(theme.coreIds,['archie','bolt','rupert']);
+  assert.equal(theme.mainHeroId,'archie');
   assert.ok(theme.characters.some(c=>c.id==='bob'));
-  assert.equal((await request('/api/theme/core','PUT',{coreIds:['archie','bolt','rupert','millie','spidey']})).status,400);
-  const bad={toneId:'demo-dragon',heroes:['millie','spidey'],villains:['bob'],idea:'Find missing moon bricks',minutes:7};
+  assert.equal((await request('/api/theme/core','PUT',{coreIds:['bolt']})).status,404);
+  const bad={toneId:'demo-dragon',coreHeroes:['bolt','rupert','millie','spidey'],heroes:['queen-mummy'],villains:['bob'],idea:'Find missing moon bricks',minutes:7};
   assert.equal((await request('/api/story','POST',bad)).status,400);
-  const valid={...bad,heroes:['millie']};
+  const valid={...bad,coreHeroes:['bolt','rupert'],heroes:['millie']};
   assert.equal((await request('/api/story','POST',valid)).status,503);
   assert.equal((await request('/api/upload','POST')).status,501);
   assert.equal((await request('/api/stories/00000000-0000-0000-0000-000000000000/approve','POST')).status,404);
