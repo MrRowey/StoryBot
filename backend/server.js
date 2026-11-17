@@ -124,18 +124,38 @@ async function generateOpenAI(input){
  if(typeof result.title!=='string'||typeof result.story!=='string'||result.story.length<200)throw Object.assign(new Error('OpenAI returned an incomplete story.'),{status:502});
  return {title:result.title.slice(0,120),story:result.story,model,provider:'openai'};
 }
-async function generateOllama(input){
- const model=selectedOllamaModel;
- if(!model)throw Object.assign(new Error('Choose an installed Ollama model in Parent Settings first.'),{status:503});
+const minimumStoryCharacters=8000;
+async function ollamaText(model,instruction,maxTokens=3000){
  let response;
- try{response=await fetch('http://127.0.0.1:11434/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,prompt:prompt(input),format:'json',stream:false,options:{temperature:0.7,num_predict:2600}}),signal:AbortSignal.timeout(240000)});}
+ try{response=await fetch('http://127.0.0.1:11434/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,prompt:instruction,stream:false,options:{temperature:0.7,num_predict:maxTokens}}),signal:AbortSignal.timeout(240000)});}
  catch(e){throw Object.assign(new Error('Ollama connection failed or timed out: '+e.message),{status:502});}
  const data=await response.json().catch(()=>({}));
  if(!response.ok)throw Object.assign(new Error('Ollama HTTP '+response.status+': '+String(data.error||'Unknown error').slice(0,250)),{status:502});
+ return String(data.response||'').trim();
+}
+async function generateOllama(input){
+ const model=selectedOllamaModel;
+ if(!model)throw Object.assign(new Error('Choose an installed Ollama model in Parent Settings first.'),{status:503});
+ const instructions=prompt(input);
+ const initial=await ollamaText(model,instructions+'\nReturn valid JSON with title and story. Write as much detailed narrative as possible; story must be at least 8000 characters.',3500);
  let result;
- try{result=JSON.parse(data.response||'');}catch{throw Object.assign(new Error('Ollama returned invalid story JSON. Try another model.'),{status:502});}
- if(typeof result.title!=='string'||typeof result.story!=='string'||result.story.length<200)throw Object.assign(new Error('Ollama returned an incomplete story. Try a larger model.'),{status:502});
- return {title:result.title.slice(0,120),story:result.story,model,provider:'ollama'};
+ try{result=JSON.parse(initial);}catch{throw Object.assign(new Error('Ollama returned invalid story JSON. Try another model.'),{status:502});}
+ if(typeof result.title!=='string'||typeof result.story!=='string'||result.story.length<200)throw Object.assign(new Error('Ollama returned an incomplete story.'),{status:502});
+ let story=result.story.trim();
+ // Preserve the existing ending, inserting extra story scenes before it.
+ for(let attempt=0;story.length<minimumStoryCharacters&&attempt<6;attempt++){
+  const paragraphs=story.split(/\n\s*\n/);
+  const ending=paragraphs.length>1?paragraphs.pop():'';
+  const prefix=paragraphs.length?paragraphs.join('\n\n'):story;
+  const recent=prefix.slice(-3500);
+  const extra=await ollamaText(model,
+   'Expand an existing gentle Bricksburg bedtime story by writing ONE NEW SCENE of at least 1400 characters. Do not restart, summarize, or conclude the story. No headings or JSON. Keep characters, tone, plot, and locations consistent. No violence. The ending is already written and will be restored after your scene.\nOriginal instructions:\n'+instructions+'\nLatest story context:\n'+recent+'\nWrite only the new scene that fits immediately before the bedtime ending.',2200);
+  if(extra.length<250)break;
+  story=prefix+'\n\n'+extra+'\n\n'+ending;
+  console.log('Ollama story expansion:',{attempt:attempt+1,characters:story.length,target:minimumStoryCharacters});
+ }
+ if(story.length<minimumStoryCharacters)throw Object.assign(new Error('Ollama generated '+story.length+' characters, below the 8000-character minimum. Try a larger model or generate again.'),{status:502});
+ return {title:result.title.slice(0,120),story,model,provider:'ollama',characterCount:story.length};
 }
 async function generate(input){return generateOllama(input);}
 export function createServer({generateStory=generate}={}){
