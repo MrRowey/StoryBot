@@ -7,12 +7,14 @@
 <section><h2>3. Core & guest heroes</h2><p class="muted">Archie always leads. Choose up to 3 core companions and 1–4 guest heroes for this story.</p><h3>Core heroes (your choice)</h3><div id="core" class="choices"></div><small id="corecount"></small><h3>Guest heroes</h3><div id="heroes" class="choices"></div></section>
 <section><h2>4. Villains</h2><p class="muted">Choose 1–3 villains, including an optional surprise AI-created villain.</p><div id="villains" class="choices"></div><label><input id="auto" type="checkbox"> Invent a new gentle villain</label></section>
 <section><h2>5. Your adventure idea</h2><label for="idea">What should happen?</label><textarea id="idea" placeholder="A mystery appears on Moon-Bricksburg and everyone helps find the missing moon bricks..."></textarea><div class="actions"><button id="mic" type="button">🎙 Speak idea</button><button id="stopmic" type="button" disabled>Stop listening</button></div><small>Speech recognition depends on browser support and microphone permission. You can always type instead.</small><label for="minutes">Target story length</label><select id="minutes"><option>5</option><option>6</option><option selected>7</option><option>8</option><option>9</option><option>10</option></select> minutes<div class="actions"><button id="generate" class="primary">✨ Generate story with Ollama</button></div></section>
-<section><h2>6. Parent review</h2><p class="muted">Read and edit the story before approval. TTS and upload will come later.</p><label for="title">Title</label><input id="title" readonly style="width:100%;padding:10px"><label for="story">Story script (editable)</label><textarea id="story"></textarea><div class="actions"><button id="save" disabled>Save edits</button><button id="approve" class="primary" disabled>✓ Parent approve</button></div><p id="approval"></p></section>
+<section><h2>6. Parent review</h2><p class="muted">Read and edit the story before approval. TTS and upload will come later.</p><label for="title">Title</label><input id="title" readonly style="width:100%;padding:10px"><label for="story">Story script (editable)</label><textarea id="story"></textarea><small id="story-count">Story characters: 0 / 8,000 minimum</small><div class="actions"><button id="save" disabled>Save edits</button><button id="approve" class="primary" disabled>✓ Parent approve</button></div><p id="approval"></p></section>
 <section><p id="message" role="status">Loading Bricksburg...</p></section></main>
 <script>
 let theme,tonies=[],toneId=null,core=[],guests=[],villains=[],draft=null,recognition=null;
 const $=id=>document.getElementById(id);
 function button(label,selected,click){const b=document.createElement('button');b.type='button';b.textContent=label;b.setAttribute('aria-pressed',String(selected));b.onclick=click;return b;}
+function updateStoryCount(){const n=$('story').value.length;$('story-count').textContent='Story characters: '+n.toLocaleString()+' / 8,000 minimum';}
+$('story').addEventListener('input',updateStoryCount);
 function notify(message){$('message').textContent=message;}
 async function openaiRequest(path){
  const key=$('openai-key').value.trim();
@@ -90,7 +92,7 @@ $('generate').onclick=async()=>{
  try{
   const response=await fetch('/api/story',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({toneId,coreHeroes:core,heroes:guests,villains,autoVillain:$('auto').checked,idea:$('idea').value,minutes:Number($('minutes').value)})});
   const data=await response.json();if(!response.ok)throw Error(data.error);
-  draft=data;$('title').value=data.title;$('story').value=data.story;$('save').disabled=false;$('approve').disabled=false;$('approval').textContent='Awaiting parent approval';notify('Story generated. Review and edit it below.');
+  draft=data;$('title').value=data.title;$('story').value=data.story;updateStoryCount();$('save').disabled=false;$('approve').disabled=false;$('approval').textContent='Awaiting parent approval';notify('Story generated. Review and edit it below.');
  }catch(e){notify(e.message);}finally{$('generate').disabled=false;}
 };
 $('save').onclick=async()=>{
