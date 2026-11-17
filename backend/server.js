@@ -8,6 +8,8 @@ const html = fileURLToPath(new URL('../frontend/index.html', import.meta.url));
 const tonies = [{id:'demo-dragon',name:'Dragon Tonie'},{id:'demo-bear',name:'Bedtime Bear'},{id:'demo-hero',name:'Hero Tonie'}];
 const drafts = new Map();
 const mainHeroId = 'archie';
+let sessionGeminiKey = null;
+const activeGeminiKey=()=>sessionGeminiKey||process.env.GEMINI_API_KEY||'';
 const reply=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(JSON.stringify(data));};
 async function body(req){let s='';for await(const chunk of req){s+=chunk;if(s.length>20000)throw Error('Request too large');}return JSON.parse(s);}
 const ids=(values,role)=>Array.isArray(values)&&values.every(id=>typeof id==='string'&&theme.characters.some(c=>c.id===id&&c.role===role))&&new Set(values).size===values.length;
@@ -42,7 +44,7 @@ Keep the narrative warm, coherent and age-appropriate. Do not portray physical c
 Return JSON ONLY with keys "title" and "story". No Markdown.`;
 }
 async function generate(input){
- const key=process.env.GEMINI_API_KEY;
+ const key=activeGeminiKey();
  if(!key)throw Object.assign(new Error('GEMINI_API_KEY is not configured on the server.'),{status:503});
  const model=process.env.GEMINI_MODEL||'gemini-3.8-flash';
  let response;
@@ -95,7 +97,31 @@ export function createServer({generateStory=generate}={}){
   try{
    const url=new URL(req.url,'http://localhost');
    if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'content-type':'text/html; charset=utf-8'});return res.end(await readFile(html));}
-   if(req.method==='GET'&&url.pathname==='/api/status')return reply(res,200,{phase:'story-builder',geminiConfigured:!!process.env.GEMINI_API_KEY,toniesLive:false});
+   if(req.method==='GET'&&url.pathname==='/api/status')return reply(res,200,{phase:'story-builder',geminiConfigured:!!activeGeminiKey(),toniesLive:false});
+   if(req.method==='GET'&&url.pathname==='/api/settings/gemini')return reply(res,200,{configured:!!activeGeminiKey(),source:sessionGeminiKey?'web session':process.env.GEMINI_API_KEY?'environment':'none',model:process.env.GEMINI_MODEL||'gemini-3.8-flash'});
+   if(req.method==='POST'&&url.pathname==='/api/settings/gemini/test'){
+    const b=await body(req);
+    const key=typeof b.key==='string'&&b.key.trim()?b.key.trim():activeGeminiKey();
+    if(!key||key.length>512)return reply(res,400,{error:'Enter a valid Gemini API key to test.'});
+    let response;
+    try{response=await fetch('https://generativelanguage.googleapis.com/v1beta/models',{headers:{'x-goog-api-key':key},signal:AbortSignal.timeout(15000)});}
+    catch(e){return reply(res,502,{error:e.name==='TimeoutError'?'Gemini verification timed out after 15 seconds.':'Unable to contact Gemini: '+e.message});}
+    let data={};try{data=await response.json();}catch{}
+    if(!response.ok)return reply(res,400,{verified:false,error:'Gemini rejected the key (HTTP '+response.status+'): '+String(data.error?.message||'Unknown API error').slice(0,250)});
+    const models=(data.models||[]).filter(m=>m.supportedGenerationMethods?.includes('generateContent')).map(m=>m.name);
+    return reply(res,200,{verified:true,message:'API key accepted by Gemini.',models});
+   }
+   if(req.method==='POST'&&url.pathname==='/api/settings/gemini'){
+    const b=await body(req);
+    if(typeof b.key!=='string'||!b.key.trim()||b.key.length>512)return reply(res,400,{error:'Enter a Gemini API key.'});
+    const key=b.key.trim();
+    let response;
+    try{response=await fetch('https://generativelanguage.googleapis.com/v1beta/models',{headers:{'x-goog-api-key':key},signal:AbortSignal.timeout(15000)});}
+    catch(e){return reply(res,502,{error:'Could not verify the API key: '+e.message});}
+    if(!response.ok)return reply(res,400,{error:'Key not saved. Gemini rejected it (HTTP '+response.status+').'});
+    sessionGeminiKey=key;
+    return reply(res,200,{configured:true,message:'Verified and saved for this server session. Restarting StoryBot clears this key.'});
+   }
    if(req.method==='GET'&&url.pathname==='/api/tonies')return reply(res,200,{tonies,integrationPending:true});
    if(req.method==='GET'&&url.pathname==='/api/theme')return reply(res,200,{...theme,mainHeroId});
    if(req.method==='POST'&&url.pathname==='/api/story'){
