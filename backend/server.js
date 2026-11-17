@@ -43,17 +43,46 @@ Return JSON ONLY with keys "title" and "story". No Markdown.`;
 }
 async function generate(input){
  const key=process.env.GEMINI_API_KEY;
- if(!key)throw Object.assign(new Error('Configure GEMINI_API_KEY on the server to generate real stories.'),{status:503});
+ if(!key)throw Object.assign(new Error('GEMINI_API_KEY is not configured on the server.'),{status:503});
  const model=process.env.GEMINI_MODEL||'gemini-2.5-flash';
- const response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{
- method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},
- body:JSON.stringify({contents:[{parts:[{text:prompt(input)}]}],generationConfig:{responseMimeType:'application/json',temperature:0.8}})
- });
- if(!response.ok)throw Object.assign(new Error('Gemini request failed ('+response.status+').'),{status:502});
- const data=await response.json();
- const raw=data.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('')||'';
- let result;try{result=JSON.parse(raw);}catch{throw Object.assign(new Error('Gemini returned an invalid story response.'),{status:502});}
- if(typeof result.title!=='string'||typeof result.story!=='string'||result.story.length<200)throw Object.assign(new Error('Gemini returned an incomplete story.'),{status:502});
+ let response;
+ try{
+  response=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent',{
+   method:'POST',headers:{'content-type':'application/json','x-goog-api-key':key},
+   body:JSON.stringify({contents:[{parts:[{text:prompt(input)}]}],generationConfig:{responseMimeType:'application/json',temperature:0.8}}),
+   signal:AbortSignal.timeout(90000)
+  });
+ }catch(e){
+  console.error('Gemini network error:',e.message);
+  throw Object.assign(new Error('Could not reach Gemini. Check internet connectivity and server logs.'),{status:502});
+ }
+ if(!response.ok){
+  let details={};try{details=await response.json();}catch{}
+  const code=details.error?.status||'';
+  const message=String(details.error?.message||'').slice(0,400);
+  console.error('Gemini API failure:',{httpStatus:response.status,code,message,model});
+  const advice=response.status===400?'Check the Gemini model name and request settings.'
+   :response.status===401||response.status===403?'Check your Gemini API key and API permissions.'
+   :response.status===404?'The configured Gemini model was not found. Check GEMINI_MODEL.'
+   :response.status===429?'Gemini quota or rate limit reached. Check Google AI Studio usage and billing.'
+   :response.status>=500?'Gemini is temporarily unavailable. Retry shortly.'
+   :'Check the server console for the Gemini error details.';
+  throw Object.assign(new Error('Gemini returned HTTP '+response.status+' ('+(code||'API error')+'). '+advice),{status:response.status===429?429:502});
+ }
+ let data;
+ try{data=await response.json();}catch{throw Object.assign(new Error('Gemini returned unreadable JSON.'),{status:502});}
+ const candidate=data.candidates?.[0];
+ const raw=candidate?.content?.parts?.map(p=>p.text||'').join('')||'';
+ if(!raw){
+  console.error('Gemini produced no text:',{finishReason:candidate?.finishReason,promptFeedback:data.promptFeedback});
+  throw Object.assign(new Error('Gemini returned no story text (finish reason: '+(candidate?.finishReason||'unknown')+').'),{status:502});
+ }
+ let result;try{result=JSON.parse(raw);}catch{
+  console.error('Gemini returned non-JSON story text:',raw.slice(0,200));
+  throw Object.assign(new Error('Gemini returned text that was not valid story JSON. Try generating again.'),{status:502});
+ }
+ if(typeof result.title!=='string'||typeof result.story!=='string'||result.story.length<200)
+  throw Object.assign(new Error('Gemini returned an incomplete story. Try generating again.'),{status:502});
  return {title:result.title.slice(0,120),story:result.story};
 }
 export function createServer(){
