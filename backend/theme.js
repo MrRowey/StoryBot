@@ -1,0 +1,42 @@
+export const theme = {
+ id:'bricksburg', name:'Superhero Archie & Bricksburg',
+ description:'Gentle, predictable LEGO-inspired bedtime superhero adventures.',
+ defaultCoreIds:['archie','bolt','rupert'],
+ rules:[
+ 'Gentle, reassuring, heroic and non-violent; no scary peril, loud yelling or physical fighting.',
+ 'Problems are silly or tricky; resolve them peacefully, ending with villains cozy and sleepy.',
+ 'Follow five stages in order: Setting the Calm, The Alert, Non-Violent Action, Power-Down, Bedtime Roll-Call.',
+ 'Start in Bricksburg under the soft blue bedroom nightlight; end with a soothing, repetitive goodnight roll-call.',
+ 'Use clean punctuation and short-to-medium paragraphs suitable for spoken narration.',
+ 'Only include signature actions and sound cues when their associated characters or items are present.'
+ ],
+ stages:['Setting the Calm','The Alert','Non-Violent Action','Power-Down','Bedtime Roll-Call'],
+ sounds:['Whirrrrr!','CLANG!','Snap, click, lock!','CLICK-SHWING!','shhhhh-pop!','Huuuummmmm...','Woof-snap!'],
+ locations:['Bricksburg bedroom base camp','Freezer Mountain kitchen','Hallway','Living room court','Attic','Back garden','Moon-Bricksburg','Mars','Secret Moon Base','Abandoned Space Station','Galactic Core','Deep-Sea Brick Reef'],
+ characters:[
+ {id:'archie',name:'Superhero Archie',role:'hero',bio:'Six-year-old Master Builder with a red cape; calm, brave and kind. Has a Transforming Sword that becomes gentle rainbow tools.'},
+ {id:'bolt',name:'Bolt',role:'hero',bio:'Tall shiny guardian robot with glowing blue eyes, golden chest shield and a deep reassuring voice. Blocks harmless obstacles.'},
+ {id:'rupert',name:'Rupert',role:'hero',bio:'Tiny orange micro-bot with spring antennas and roller-wheels; zooms Whirrrrr!, builds yellow LEGO walls and can BEEP-MORPH into mini vehicles.'},
+ {id:'queen-mummy',name:'Queen Mummy',role:'hero',bio:'Ruler of Bricksburg with golden LEGO crown and Golden Scepter of Bedtime.'},
+ {id:'shelly',name:'Auntie Shelly',role:'hero',bio:'Family hero who travels by space portal in a silver spacesuit with bubble nets and moon shields.'},
+ {id:'uncle-ben',name:'Uncle Bev (Uncle Ben)',role:'hero',bio:'Family hero who travels by space portal in a silver spacesuit with bubble nets and moon shields.'},
+ {id:'millie',name:'Millie the Grand Historian',role:'hero',bio:'Carries a glowing golden book of galactic history, decodes clues and unlocks space domes.'},
+ {id:'nanny',name:'Nanny',role:'hero',bio:'Family helper on home, garden and attic missions.'},
+ {id:'grandad',name:'Grandad',role:'hero',bio:'Family helper on home, garden and attic missions.'},
+ {id:'linny',name:'Auntie Linny',role:'hero',bio:'Family helper on home, garden and attic missions.'},
+ {id:'crocodogs',name:'The Crocodogs',role:'hero',bio:'Friendly crocodile-puppy pets; chew villain wands into rubber bones. Woof-snap!'},
+ {id:'spidey',name:'Spidey Team',role:'hero',bio:'Spidey, Ghost-Spider and Spin swing through web portals and use soft blue web nets.'},
+ {id:'rangers',name:'Power Rangers',role:'hero',bio:'Arrive by golden portals with the Ultra-Lego Megazord Mech and magic connector bricks.'},
+ {id:'bob',name:'Bob the Tech-Mech Wizard',role:'villain',bio:'Mischievous wizard who glitches lamps and towers with a neon-green wand. Bzzzzzt!'},
+ {id:'snore',name:'The Sleepy Snore-Bot',role:'villain',bio:'Noisy brass gears and alarm clocks; Tick-tock, BEEP-BEEP!'},
+ {id:'dust',name:'The Dust-Bunny Bandit',role:'villain',bio:'Fluffy grey LEGO creature collecting red bricks and moon dust. Snicker-snack!'},
+ {id:'glitch',name:'Sir Glitch-a-Lot',role:'villain',bio:'Pixelated purple knight whose puzzle sword scrambles tiles and star charts. Zap-glitch-zap!'},
+ {id:'paramedics',name:'Porter & Grace the Paramedic Bots',role:'villain',bio:'Neon-yellow hover ambulances and sticky white bandages. Wee-woo!'},
+ {id:'gear',name:'The Gear Goblin',role:'villain',bio:'Small mechanical goblin who unscrews gears and stars. Click-clack!'},
+ {id:'frost',name:'Frost Bot',role:'villain',bio:'Creates silly snowy ice rinks. Flurry-flurry-pop!'},
+ {id:'mud',name:'Mud Bot',role:'villain',bio:'Makes squishy brown brick walls.'},
+ {id:'willow',name:'Willow the Evil Cat',role:'villain',bio:'Black-and-purple LEGO robo-cat with yellow eyes, soothed by starlight yarn.'},
+ {id:'thanos',name:'Thanos & Infinity Robots',role:'villain',bio:'Cosmic visitors in purple armor looking for gold LEGO bricks; must be harmless and gently calmed.'},
+ {id:'tormentor',name:'Grandad the Tormentor',role:'villain',bio:'Playful cosmic mastermind with a purple feather tickle wand. Swish-tickle-swish!'}
+ ]
+};
